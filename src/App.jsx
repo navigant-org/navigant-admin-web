@@ -42,7 +42,7 @@ function App() {
                 !isAuthenticated ? (
                     <Auth onLogin={handleLogin} />
                 ) : (
-                    <Navigate to="/dashboard" replace />
+                    <Navigate to="/buildings" replace />
                 )
             } 
         />
@@ -50,7 +50,7 @@ function App() {
         {/* Protected Routes */}
         <Route element={isAuthenticated ? <Layout onLogout={handleLogout} /> : <Navigate to="/" replace />}>
 
-            <Route path="/dashboard" element={<Dashboard />} />
+            {/* <Route path="/dashboard" element={<Dashboard />} /> */}
             <Route path="/buildings" element={<Buildings />} />
 
             {/* Building Layout Routes */}
