@@ -35,9 +35,7 @@ const HomeIcon = () => (
 export default function Sidebar() {
     const navItems = [
         { name: 'Dashboard', path: '/dashboard', icon: <HomeIcon /> },
-        { name: 'Upload Floor Map', path: '/upload-map', icon: <UploadIcon /> },
-        { name: 'Map Editor', path: '/map-editor', icon: <MapIcon /> },
-        { name: 'Manage Nodes', path: '/manage-nodes', icon: <NodeIcon /> },
+        { name: 'Buildings', path: '/buildings', icon: <MapIcon /> },
         { name: 'Export Data', path: '/export-data', icon: <ExportIcon /> },
     ];
 

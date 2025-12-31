@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Auth from './Pages/Auth'
 import Dashboard from './Pages/Dashboard'
-import UploadMap from './Pages/UploadMap';
+import Buildings from './Pages/Buildings';
+import Floors from './Pages/Floors';
 import MapEditor from './Pages/MapEditor';
-import ManageNodes from './Pages/ManageNodes';
 import ExportData from './Pages/ExportData';
 import Layout from './Components/Layout';
+import BuildingLayout from './Components/BuildingLayout';
+import BuildingNodes from './Pages/BuildingNodes';
+import BuildingEdges from './Pages/BuildingEdges';
 import storage, { KEYS } from './utils/storage';
 
 function App() {
@@ -48,9 +51,17 @@ function App() {
         <Route element={isAuthenticated ? <Layout onLogout={handleLogout} /> : <Navigate to="/" replace />}>
 
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/upload-map" element={<UploadMap />} />
-            <Route path="/map-editor" element={<MapEditor />} />
-            <Route path="/manage-nodes" element={<ManageNodes />} />
+            <Route path="/buildings" element={<Buildings />} />
+
+            {/* Building Layout Routes */}
+            <Route path="/buildings/:buildingId" element={<BuildingLayout />}>
+                <Route index element={<Navigate to="floors" replace />} />
+                <Route path="floors" element={<Floors />} />
+                <Route path="nodes" element={<BuildingNodes />} />
+                <Route path="edges" element={<BuildingEdges />} />
+            </Route>
+            
+            <Route path="/floors/:floorId/map" element={<MapEditor />} />
             <Route path="/export-data" element={<ExportData />} />
         </Route>
       </Routes>

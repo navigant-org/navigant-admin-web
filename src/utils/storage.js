@@ -4,6 +4,8 @@ export const KEYS = {
     NODES: 'navigant_nodes',
     EDGES: 'navigant_edges',
     SCALE_RATIO: 'navigant_scale_ratio',
+    BUILDINGS: 'navigant_buildings',
+    FLOORS: 'navigant_floors',
 };
 
 const storage = {
