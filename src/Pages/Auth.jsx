@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authService } from '../api/services';
 
 export default function Auth({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -8,24 +9,47 @@ export default function Auth({ onLogin }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Additional state for registration
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate network delay for better UX
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    if (isLogin) {
-      if (email === 'admin@gmail.com' && password === 'admin') {
+    try {
+      if (isLogin) {
+        const data = await authService.login({ email, password });
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
         onLogin();
       } else {
-        setError('Invalid credentials');
-        setIsLoading(false);
+        // Register flow
+        const data = await authService.registerAdmin({
+           name,
+           email,
+           phone,
+           password
+        });
+        // Auto login after registration or show success message? 
+        // For now, let's assume auto-login if the API returns a token, 
+        // otherwise ask them to login.
+        // The docs say response contains 'user', but maybe not token?
+        // Let's safe bet: switch to login mode and fill credentials or just auto-login if token present.
+        
+        // Actually, let's just alert success and switch to login for clarity
+        setIsLogin(true);
+        setError('');
+        alert('Registration successful! Please log in.');
       }
-    } else {
-      // Simulate signup
-      onLogin();
+    } catch (err) {
+      console.error("Auth error:", err);
+      // Try to extract error message from response
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Authentication failed';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -53,8 +77,12 @@ export default function Auth({ onLogin }) {
             <div className="bg-white p-4 rounded-2xl shadow-lg shadow-blue-500/10 ring-1 ring-slate-900/5 mb-4">
                 <img src="/logomark.svg" alt="Navigant" className="h-12 w-12" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Welcome Back</h1>
-            <p className="text-slate-500 mt-2 text-sm">Enter your credentials to access the admin panel.</p>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                {isLogin ? 'Welcome Back' : 'Create Account'}
+            </h1>
+            <p className="text-slate-500 mt-2 text-sm">
+                {isLogin ? 'Enter your credentials to access the admin panel.' : 'Register as a new admin user.'}
+            </p>
         </div>
 
         {/* Glass Card */}
@@ -72,6 +100,37 @@ export default function Auth({ onLogin }) {
                 )}
 
                 <div className="space-y-4">
+                    {!isLogin && (
+                        <>
+                            <div className="group">
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1 uppercase tracking-wider">Full Name</label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        required
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 block p-3.5 transition-all outline-none shadow-sm group-hover:border-slate-300 placeholder:text-slate-300"
+                                        placeholder="John Doe"
+                                    />
+                                </div>
+                            </div>
+                            <div className="group">
+                                <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1 uppercase tracking-wider">Phone</label>
+                                <div className="relative">
+                                    <input
+                                        type="tel"
+                                        required
+                                        value={phone}
+                                        onChange={(e) => setPhone(e.target.value)}
+                                        className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 block p-3.5 transition-all outline-none shadow-sm group-hover:border-slate-300 placeholder:text-slate-300"
+                                        placeholder="1234567890"
+                                    />
+                                </div>
+                            </div>
+                        </>
+                    )}
+
                     <div className="group">
                         <label className="block text-xs font-semibold text-slate-500 mb-1.5 ml-1 uppercase tracking-wider">Email Address</label>
                         <div className="relative">
@@ -119,7 +178,9 @@ export default function Auth({ onLogin }) {
                 <div className="flex items-center justify-between mt-1">
                     <div className="flex items-center">
                     </div>
-                    <a href="#" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline">Forgot password?</a>
+                    {isLogin && (
+                        <a href="#" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline">Forgot password?</a>
+                    )}
                 </div>
 
                 <button
@@ -142,7 +203,10 @@ export default function Auth({ onLogin }) {
                         {isLogin ? "Don't have an account?" : "Already have an account?"}
                         <button
                             type="button"
-                            onClick={() => setIsLogin(!isLogin)}
+                            onClick={() => {
+                                setIsLogin(!isLogin);
+                                setError('');
+                            }}
                             className="font-semibold text-blue-600 hover:text-blue-500 ml-1 hover:underline"
                         >
                             {isLogin ? "Sign up" : "Log in"}

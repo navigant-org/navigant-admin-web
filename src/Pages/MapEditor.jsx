@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { buildingService, floorService, nodeService, edgeService } from '../api/services';
 import Breadcrumbs from '../Components/Breadcrumbs';
 
 export default function MapEditor() {
@@ -36,67 +36,53 @@ export default function MapEditor() {
     const [tempNodePosition, setTempNodePosition] = useState(null);
 
     useEffect(() => {
-        // Load Floor and Building
-        const floors = storage.load(KEYS.FLOORS, []);
-        const buildings = storage.load(KEYS.BUILDINGS, []);
-        
-        const currentFloor = floors.find(f => f.id === floorId);
-        if (!currentFloor) {
-             navigate('/buildings');
-             return;
+        if (floorId) loadData();
+    }, [floorId]);
+
+    const loadData = async () => {
+        try {
+            // Load floor
+            const floorData = await floorService.getById(floorId);
+            setFloor(floorData);
+            if (floorData.scale) {
+                setScaleRatio(floorData.scale);
+            }
+            
+            // Load building
+            if (floorData.building_id) {
+                const buildingData = await buildingService.getById(floorData.building_id);
+                setBuilding(buildingData);
+            }
+
+            // Load Nodes and Edges for this floor
+            if (floorData.building_id) {
+                const nodesData = await buildingService.getNodes(floorData.building_id);
+                const nodesList = Array.isArray(nodesData) ? nodesData : (nodesData.nodes || []);
+                const floorNodes = nodesList.filter(n => n.floor_id == floorId);
+                
+                // Map API fields to UI fields
+                setNodes(floorNodes.map(n => ({
+                    ...n,
+                    id: n.node_id,
+                    x: n.x_coordinate,
+                    y: n.y_coordinate,
+                    label: n.name
+                })));
+                
+                // Load Edges
+                const edgesData = await buildingService.getEdges(floorData.building_id);
+                const edgesList = Array.isArray(edgesData) ? edgesData : (edgesData.edges || []);
+                const floorEdges = edgesList.filter(e => e.floor_id == floorId);
+                setEdges(floorEdges.map(e => ({
+                     ...e,
+                     id: e.edge_id,
+                     source: e.start_node_id,
+                     target: e.end_node_id
+                })));
+            }
+        } catch (err) {
+            console.error("Failed to load map data:", err);
         }
-        setFloor(currentFloor);
-        if (currentFloor.scaleRatio) {
-            setScaleRatio(currentFloor.scaleRatio);
-        }
-        
-        const currentBuilding = buildings.find(b => b.id === currentFloor.buildingId);
-        setBuilding(currentBuilding);
-
-        // Load Nodes and Edges
-        const allNodes = storage.load(KEYS.NODES, []);
-        const allEdges = storage.load(KEYS.EDGES, []);
-
-        const floorNodes = allNodes.filter(n => n.floorId === floorId);
-        setNodes(floorNodes);
-
-        // Filter edges that belong to this floor's nodes
-        // We assume distinct ID spaces or just filter by presence of source/target in our node list
-        const floorNodeIds = new Set(floorNodes.map(n => n.id));
-        const floorEdges = allEdges.filter(e => floorNodeIds.has(e.source) && floorNodeIds.has(e.target));
-        setEdges(floorEdges);
-
-    }, [floorId, navigate]);
-
-    // Helpers to save data back to global storage
-    const saveNodes = (updatedNodes) => {
-        setNodes(updatedNodes);
-        const allNodes = storage.load(KEYS.NODES, []);
-        // Remove current floor nodes from global list
-        const otherNodes = allNodes.filter(n => n.floorId !== floorId);
-        // Add updated current floor nodes
-        storage.save(KEYS.NODES, [...otherNodes, ...updatedNodes]);
-    };
-
-    const saveEdges = (updatedEdges) => {
-        setEdges(updatedEdges);
-        const allEdges = storage.load(KEYS.EDGES, []);
-        const currentFloorNodeIds = new Set(nodes.map(n => n.id));
-        
-        // Keep edges that DO NOT connect any node on this floor (conservative)
-        // or just keep edges that are not in our current "active" set if we tracked IDs properly.
-        // Since we filtered `floorEdges` based on nodes, let's reverse that.
-        // We remove any edge where both source and target are in `currentFloorNodeIds`.
-        
-        const keptEdges = allEdges.filter(e => !(currentFloorNodeIds.has(e.source) && currentFloorNodeIds.has(e.target)));
-        storage.save(KEYS.EDGES, [...keptEdges, ...updatedEdges]);
-    };
-
-    const updateFloorData = (updates) => {
-        const floors = storage.load(KEYS.FLOORS, []);
-        const updatedFloors = floors.map(f => f.id === floorId ? { ...f, ...updates } : f);
-        storage.save(KEYS.FLOORS, updatedFloors);
-        setFloor(prev => ({ ...prev, ...updates }));
     };
 
     const handleImageLoad = (e) => {
@@ -109,7 +95,6 @@ export default function MapEditor() {
     const handleCanvasClick = (e) => {
         if (activeTool !== 'node') return;
 
-        // Use nativeEvent to get coordinates relative to the target element (the container/image)
         const x = e.nativeEvent.offsetX;
         const y = e.nativeEvent.offsetY;
 
@@ -118,22 +103,46 @@ export default function MapEditor() {
         setShowNodeCreationModal(true);
     };
 
-    const confirmCreateNode = () => {
+    const confirmCreateNode = async () => {
         if (!newNodeName.trim()) return;
 
-        const newNode = {
-            id: Date.now().toString(),
-            floorId,
-            label: newNodeName,
-            x: tempNodePosition.x,
-            y: tempNodePosition.y,
-            magneticData: null 
-        };
+        try {
+            const newNodeData = {
+                floor_id: parseInt(floorId, 10),
+                name: newNodeName.trim(),
+                x_coordinate: tempNodePosition.x,
+                y_coordinate: tempNodePosition.y,
+                node_type: 'room'
+            };
 
-        saveNodes([...nodes, newNode]);
-        setShowNodeCreationModal(false);
-        setTempNodePosition(null);
-        setActiveTool('select');
+            const createdNode = await nodeService.create(newNodeData);
+            console.log("Created node response:", createdNode);
+            
+            // Map the response to UI format
+            const mappedNode = {
+                ...createdNode,
+                id: createdNode.node_id || createdNode.id || `temp-${Date.now()}`,
+                x: createdNode.x_coordinate ?? tempNodePosition.x,
+                y: createdNode.y_coordinate ?? tempNodePosition.y,
+                label: createdNode.name || newNodeName.trim(),
+                floor_id: createdNode.floor_id
+            };
+
+            console.log("Adding mapped node to state:", mappedNode);
+
+            // Update state using functional update to ensure we get latest state
+            setNodes(prevNodes => [...prevNodes, mappedNode]);
+            
+            // Clear modal
+            setShowNodeCreationModal(false);
+            setTempNodePosition(null);
+            setNewNodeName('');
+            setActiveTool('select');
+
+        } catch (err) {
+            console.error("Failed to create node:", err);
+            alert("Failed to create node. Error: " + (err.response?.data?.message || err.message));
+        }
     };
 
     const calculateDistance = (id1, id2) => {
@@ -143,14 +152,13 @@ export default function MapEditor() {
         return Math.sqrt(Math.pow(n2.x - n1.x, 2) + Math.pow(n2.y - n1.y, 2));
     };
 
-    const handleNodeClick = (e, nodeId) => {
+    const handleNodeClick = async (e, nodeId) => {
         e.stopPropagation();
         if (activeTool === 'select') {
             setSelectedNodeId(nodeId);
         } else if (activeTool === 'edge') {
             if (selectedNodeId && selectedNodeId !== nodeId) {
                 // Create Edge
-                // Check if exists
                 const existing = edges.find(ed => 
                     (ed.source === selectedNodeId && ed.target === nodeId) ||
                     (ed.source === nodeId && ed.target === selectedNodeId)
@@ -160,15 +168,41 @@ export default function MapEditor() {
                     setSelectedNodeId(null);
                     return;
                 }
+                
+                const dist = calculateDistance(selectedNodeId, nodeId);
 
-                const newEdge = {
-                    id: Date.now().toString(),
-                    source: selectedNodeId,
-                    target: nodeId,
-                    distance: calculateDistance(selectedNodeId, nodeId)
-                };
-                saveEdges([...edges, newEdge]);
-                setSelectedNodeId(null);
+                try {
+                     const newEdgeData = {
+                        start_node_id: selectedNodeId,
+                        end_node_id: nodeId,
+                        distance: dist,
+                        floor_id: parseInt(floorId, 10)
+                    };
+                    
+                    console.log("Creating edge:", newEdgeData);
+                    const createdEdge = await edgeService.create(newEdgeData);
+                    console.log("Created edge response:", createdEdge);
+                    
+                    const mappedEdge = {
+                        ...createdEdge,
+                        id: createdEdge.edge_id || createdEdge.id || `temp-${Date.now()}`,
+                        source: createdEdge.start_node_id || selectedNodeId,
+                        target: createdEdge.end_node_id || nodeId,
+                        distance: createdEdge.distance || dist
+                    };
+                    
+                    console.log("Adding mapped edge to state:", mappedEdge);
+                    setEdges(prevEdges => {
+                        const newEdges = [...prevEdges, mappedEdge];
+                        console.log("Updated edges array:", newEdges);
+                        return newEdges;
+                    });
+                    setSelectedNodeId(null);
+
+                } catch (err) {
+                     console.error("Failed to create edge:", err);
+                     alert("Failed to connect nodes. Error: " + (err.response?.data?.message || err.message));
+                }
             } else {
                 setSelectedNodeId(nodeId);
             }
@@ -181,38 +215,57 @@ export default function MapEditor() {
             setCalibrationEdge(edge);
             setRealDistance('');
         } else if (activeTool === 'select') {
-             // Future: Implement edge deletion
+             if (window.confirm('Delete this edge?')) {
+                 edgeService.delete(edge.id).then(() => {
+                     setEdges(edges.filter(ed => ed.id !== edge.id));
+                 }).catch(err => {
+                     console.error("Failed to delete edge", err);
+                 });
+             }
         }
     };
 
-    const handleCalibrate = () => {
+    const handleCalibrate = async () => {
         if (!calibrationEdge || !realDistance) return;
         const distPx = calibrationEdge.distance;
         const distM = parseFloat(realDistance);
         if (distM <= 0) return;
         
-        const ratio = distM / distPx; // Meters per Pixel
-        setScaleRatio(ratio);
-        updateFloorData({ scaleRatio: ratio });
-        setScaleMode(false);
-        setCalibrationEdge(null);
+        const ratio = distM / distPx;
+        
+        try {
+            await floorService.update(floorId, { 
+                scale: ratio,
+                building_id: floor.building_id,
+                floor_number: floor.floor_number
+            });
+
+            setScaleRatio(ratio);
+            setFloor(prev => ({ ...prev, scale: ratio }));
+            setScaleMode(false);
+            setCalibrationEdge(null);
+            
+        } catch (err) {
+            console.error("Failed to update calibration:", err);
+            alert("Failed to save scale.");
+        }
     };
 
     const breadcrumbItems = [
         { label: 'Buildings', path: '/buildings' },
-        { label: building?.name || '...', path: building ? `/buildings/${building.id}/floors` : null },
-        { label: floor?.name || 'Map Editor', path: null },
+        { label: building?.name || '...', path: building ? `/buildings/${building.building_id}/floors` : null },
+        { label: floor?.name || `Floor ${floor?.floor_number || ''}`, path: null },
     ];
 
     if (!floor) return <div className="p-8 text-center text-gray-500">Loading Map Editor...</div>;
-    // Note: We show editor even if mapImage is missing, but advise user
-    if (!floor.mapImage) {
+    
+    if (!floor.map_img_url) {
          return (
              <div className="p-8 space-y-4">
                  <Breadcrumbs items={breadcrumbItems} />
                  <div className="text-center py-12 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
                     <p className="text-gray-500 mb-4">No map image found for this floor.</p>
-                    <button onClick={() => navigate(`/buildings/${floor.buildingId}/floors`)} className="text-[var(--color-primary)] font-bold hover:underline">
+                    <button onClick={() => navigate(`/buildings/${floor.building_id}/floors`)} className="text-[var(--color-primary)] font-bold hover:underline">
                         Go back to Upload Map
                     </button>
                  </div>
@@ -230,7 +283,7 @@ export default function MapEditor() {
             <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-100 flex-shrink-0">
                 <div>
                      <div className="flex items-center gap-2 mb-1">
-                        <h2 className="text-xl font-bold text-gray-900">{floor.name} Editor</h2>
+                        <h2 className="text-xl font-bold text-gray-900">Floor {floor.floor_number} Editor</h2>
                      </div>
                     <p className="text-xs text-gray-500">
                         {scaleRatio 
@@ -274,7 +327,7 @@ export default function MapEditor() {
                 </div>
             </div>
 
-            {/* Canvas Container - Scrollable */}
+            {/* Canvas Container */}
             <div className="flex-1 overflow-auto bg-gray-50 rounded-xl border border-dashed border-gray-300 relative select-none">
                 <div className="relative inline-block min-w-full min-h-full">
                      <div 
@@ -282,16 +335,14 @@ export default function MapEditor() {
                         className={`relative inline-block ${activeTool === 'node' ? 'cursor-crosshair' : 'cursor-default'}`}
                         onClick={handleCanvasClick}
                      >
-                        {/* Map Image */}
                         <img 
-                            src={floor.mapImage} 
+                            src={floor.map_img_url} 
                             alt="Map Blueprint" 
                             className="block max-w-none pointer-events-none select-none"
                             onLoad={handleImageLoad}
                             draggable={false}
                         />
 
-                        {/* SVG Layer */}
                          <svg 
                             className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
                             style={{ width: imageDimensions.width, height: imageDimensions.height }}
@@ -360,13 +411,12 @@ export default function MapEditor() {
                                         onMouseEnter={() => setHoveredNodeId(node.id)}
                                         onMouseLeave={() => setHoveredNodeId(null)}
                                     />
-                                    {/* Hover Label */}
                                     {hoveredNodeId === node.id && (
                                         <g pointerEvents="none" style={{ zIndex: 50 }}>
                                             <rect 
-                                                x={node.x - ((node.label.length * 7) / 2) - 8}
+                                                x={node.x - ((node.label?.length || 4) * 7) / 2 - 8}
                                                 y={node.y - 30}
-                                                width={(node.label.length * 7) + 16}
+                                                width={(node.label?.length || 4) * 7 + 16}
                                                 height="22"
                                                 rx="4"
                                                 fill="rgba(0,0,0,0.8)"
@@ -380,7 +430,7 @@ export default function MapEditor() {
                                                 fontSize="11"
                                                 fontWeight="bold"
                                             >
-                                                {node.label}
+                                                {node.label || 'Node'}
                                             </text>
                                         </g>
                                     )}
@@ -430,10 +480,11 @@ export default function MapEditor() {
                             onChange={(e) => setNewNodeName(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && confirmCreateNode()}
                             className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-center font-bold mb-4"
+                            placeholder="Enter node name..."
                         />
                         <div className="flex gap-3">
-                            <button onClick={() => setShowNodeCreationModal(false)} className="flex-1 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">Cancel</button>
-                            <button onClick={confirmCreateNode} className="flex-1 py-2 bg-[var(--color-primary)] text-white rounded-lg font-bold">Create</button>
+                            <button onClick={() => { setShowNodeCreationModal(false); setTempNodePosition(null); setNewNodeName(''); }} className="flex-1 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">Cancel</button>
+                            <button onClick={confirmCreateNode} disabled={!newNodeName.trim()} className="flex-1 py-2 bg-[var(--color-primary)] text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed">Create</button>
                         </div>
                     </div>
                 </div>

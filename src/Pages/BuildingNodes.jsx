@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useOutletContext } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { useParams } from 'react-router-dom';
+import { buildingService, nodeService } from '../api/services';
 
 export default function BuildingNodes() {
     const { buildingId } = useParams();
@@ -11,77 +11,118 @@ export default function BuildingNodes() {
 
     // Selection & Details State
     const [selectedNode, setSelectedNode] = useState(null);
+    const [selectedNodeFingerprint, setSelectedNodeFingerprint] = useState(null);
     const [activeTab, setActiveTab] = useState('fingerprint'); // 'fingerprint' or 'raw'
+    const [loadingFingerprint, setLoadingFingerprint] = useState(false);
 
     // Edit State (Modal)
     const [editingNode, setEditingNode] = useState(null);
     const [editLabel, setEditLabel] = useState('');
 
     useEffect(() => {
-        loadData();
+        if (buildingId) {
+            loadData();
+        }
     }, [buildingId]);
 
-    const loadData = () => {
-        const allFloors = storage.load(KEYS.FLOORS, []);
-        const buildingFloors = allFloors.filter(f => f.buildingId === buildingId).sort((a,b) => a.level - b.level);
-        setFloors(buildingFloors);
+    useEffect(() => {
+        if (selectedNode) {
+            fetchFingerprints(selectedNode.node_id);
+        } else {
+            setSelectedNodeFingerprint(null);
+        }
+    }, [selectedNode]);
 
-        const allNodes = storage.load(KEYS.NODES, []);
-        // Get IDs of floors in this building
-        const buildingFloorIds = new Set(buildingFloors.map(f => f.id));
-        const buildingNodes = allNodes.filter(n => buildingFloorIds.has(n.floorId));
-        setNodes(buildingNodes);
+    const loadData = async () => {
+        try {
+            // Load floors first for mapping names
+            const floorsData = await buildingService.getFloors(buildingId);
+            const floorsList = Array.isArray(floorsData) ? floorsData : (floorsData.floors || []);
+            setFloors(floorsList.sort((a,b) => a.floor_number - b.floor_number));
+
+            // Load nodes
+            const nodesData = await buildingService.getNodes(buildingId);
+             // API usually returns { nodes: [...] } or array
+            const nodesList = Array.isArray(nodesData) ? nodesData : (nodesData.nodes || []);
+            setNodes(nodesList);
+        } catch (err) {
+            console.error("Failed to load data:", err);
+        }
+    };
+
+    const fetchFingerprints = async (nodeId) => {
+        try {
+            setLoadingFingerprint(true);
+            const data = await nodeService.getFingerprints(nodeId);
+            // Expected response: { fingerprint: { mean: {...}, std: {...}, raw: [...] } }
+            // Adjust based on actual API
+            setSelectedNodeFingerprint(data);
+        } catch (err) {
+            console.error("Failed to fetch fingerprints:", err);
+            setSelectedNodeFingerprint(null);
+        } finally {
+            setLoadingFingerprint(false);
+        }
     };
 
     const getFloorName = (floorId) => {
-        const f = floors.find(fl => fl.id === floorId);
-        return f ? f.name : 'Unknown Floor';
+        const f = floors.find(fl => fl.floor_id === floorId);
+        return f ? (f.name || `Level ${f.floor_number}`) : 'Unknown Floor';
     };
 
-    const handleDelete = (nodeId, e) => {
+    const handleDelete = async (nodeId, e) => {
         if (e) e.stopPropagation();
         if (window.confirm('Delete this node? Associated edges will also be removed.')) {
-            const allNodes = storage.load(KEYS.NODES, []);
-            const updatedNodes = allNodes.filter(n => n.id !== nodeId);
-            storage.save(KEYS.NODES, updatedNodes);
-
-            // Also delete edges
-            const allEdges = storage.load(KEYS.EDGES, []);
-            const updatedEdges = allEdges.filter(e => e.source !== nodeId && e.target !== nodeId);
-            storage.save(KEYS.EDGES, updatedEdges);
-            
-            if (selectedNode?.id === nodeId) setSelectedNode(null);
-            loadData();
+            try {
+                await nodeService.delete(nodeId);
+                // Optimistic update
+                setNodes(nodes.filter(n => n.node_id !== nodeId));
+                
+                if (selectedNode?.node_id === nodeId) setSelectedNode(null);
+            } catch (err) {
+                console.error("Failed to delete node:", err);
+                alert("Failed to delete node.");
+            }
         }
     };
 
     const handleEditClick = (node, e) => {
         if (e) e.stopPropagation();
         setEditingNode(node);
-        setEditLabel(node.label);
+        setEditLabel(node.name || node.label || '');
     };
 
-    const saveEdit = () => {
+    const saveEdit = async () => {
         if (!editLabel.trim()) return;
-        const allNodes = storage.load(KEYS.NODES, []);
-        const updatedNodes = allNodes.map(n => n.id === editingNode.id ? { ...n, label: editLabel } : n);
-        storage.save(KEYS.NODES, updatedNodes);
-        
-        // Update selected node if it's the one being edited
-        if (selectedNode?.id === editingNode?.id) {
-            setSelectedNode({ ...selectedNode, label: editLabel });
-        }
+        try {
+            // The API expects whatever fields we want to update.
+            await nodeService.update(editingNode.node_id, {
+                name: editLabel
+                // keep other fields same if needed, or API handles partial updates
+            });
 
-        setEditingNode(null);
-        loadData();
+            // Refresh or update locally
+            setNodes(nodes.map(n => n.node_id === editingNode.node_id ? { ...n, name: editLabel } : n));
+            
+            if (selectedNode?.node_id === editingNode?.node_id) {
+                setSelectedNode({ ...selectedNode, name: editLabel });
+            }
+
+            setEditingNode(null);
+        } catch (err) {
+            console.error("Failed to update node:", err);
+            alert("Failed to update node.");
+        }
     };
 
+    // Correct filtering based on floor ID type (string vs number)
     const filteredNodes = filterFloorId === 'all' 
         ? nodes 
-        : nodes.filter(n => n.floorId === filterFloorId);
+        : nodes.filter(n => n.floor_id == filterFloorId); // loose equality for string/number match
 
     // Helper to safely access magnetic data
-    const getMagData = (node) => node?.magneticFingerprint || {};
+    // Assuming API structure. If flattened, adjust.
+    const getMagData = () => selectedNodeFingerprint || {};
 
     return (
         <div className="flex relative h-[calc(100vh-12rem)]">
@@ -98,7 +139,7 @@ export default function BuildingNodes() {
                         >
                             <option value="all">All Floors</option>
                             {floors.map(f => (
-                                <option key={f.id} value={f.id}>{f.name} (Lvl {f.level})</option>
+                                <option key={f.floor_id} value={f.floor_id}>{f.name || `Level ${f.floor_number}`}</option>
                             ))}
                         </select>
                     </div>
@@ -124,14 +165,14 @@ export default function BuildingNodes() {
                             ) : (
                                 filteredNodes.map(node => (
                                     <tr 
-                                        key={node.id} 
+                                        key={node.node_id} 
                                         onClick={() => setSelectedNode(node)}
-                                        className={`cursor-pointer transition-colors ${selectedNode?.id === node.id ? 'bg-blue-50 border-l-4 border-l-[var(--color-primary)]' : 'hover:bg-gray-50/50'}`}
+                                        className={`cursor-pointer transition-colors ${selectedNode?.node_id === node.node_id ? 'bg-blue-50 border-l-4 border-l-[var(--color-primary)]' : 'hover:bg-gray-50/50'}`}
                                     >
-                                        <td className="px-6 py-4 font-bold text-gray-900">{node.label}</td>
-                                        <td className="px-6 py-4 text-gray-600">{getFloorName(node.floorId)}</td>
+                                        <td className="px-6 py-4 font-bold text-gray-900">{node.name || node.label || 'Unnamed'}</td>
+                                        <td className="px-6 py-4 text-gray-600">{getFloorName(node.floor_id)}</td>
                                         <td className="px-6 py-4 text-gray-500 font-mono text-xs">
-                                            x: {Math.round(node.x)}, y: {Math.round(node.y)}
+                                            x: {Math.round(node.x_coordinate ?? node.x)}, y: {Math.round(node.y_coordinate ?? node.y)}
                                         </td>
                                         <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
                                             <button 
@@ -141,7 +182,7 @@ export default function BuildingNodes() {
                                                 Edit
                                             </button>
                                             <button 
-                                                onClick={(e) => handleDelete(node.id, e)}
+                                                onClick={(e) => handleDelete(node.node_id, e)}
                                                 className="text-red-600 hover:text-red-800 font-medium text-xs px-2 py-1 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                                             >
                                                 Delete
@@ -164,8 +205,8 @@ export default function BuildingNodes() {
                     <>
                         <div className="p-4 border-b border-gray-100 flex justify-between items-start bg-gray-50/50">
                             <div>
-                                <h4 className="text-lg font-bold text-gray-900">{selectedNode.label}</h4>
-                                <p className="text-xs text-gray-500 mt-1">{getFloorName(selectedNode.floorId)}</p>
+                                <h4 className="text-lg font-bold text-gray-900">{selectedNode.name || selectedNode.label || 'Unnamed'}</h4>
+                                <p className="text-xs text-gray-500 mt-1">{getFloorName(selectedNode.floor_id)}</p>
                             </div>
                             <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -192,9 +233,15 @@ export default function BuildingNodes() {
 
                         {/* Tab Content */}
                         <div className="flex-1 overflow-auto p-4">
+                            {loadingFingerprint ? (
+                                <div className="text-center py-10 text-gray-400 text-sm">
+                                    Loading data...
+                                </div>
+                            ) : (
+                                <>
                             {activeTab === 'fingerprint' && (
                                 <div className="space-y-4">
-                                    {!getMagData(selectedNode).mean ? (
+                                    {!getMagData().mean ? (
                                         <div className="text-center py-10 text-gray-400 text-sm">
                                             No processed fingerprint data available.
                                         </div>
@@ -210,18 +257,18 @@ export default function BuildingNodes() {
                                             <tbody className="divide-y divide-gray-100">
                                                 <tr>
                                                     <td className="px-2 py-2 font-bold text-gray-700">X</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).mean?.x?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).std?.x?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.x?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.x?.toFixed(2) ?? '-'}</td>
                                                 </tr>
                                                 <tr>
                                                     <td className="px-2 py-2 font-bold text-gray-700">Y</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).mean?.y?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).std?.y?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.y?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.y?.toFixed(2) ?? '-'}</td>
                                                 </tr>
                                                 <tr>
                                                     <td className="px-2 py-2 font-bold text-gray-700">Z</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).mean?.z?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData(selectedNode).std?.z?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.z?.toFixed(2) ?? '-'}</td>
+                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.z?.toFixed(2) ?? '-'}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
@@ -231,7 +278,7 @@ export default function BuildingNodes() {
 
                             {activeTab === 'raw' && (
                                 <div className="space-y-4">
-                                     {!getMagData(selectedNode).raw || getMagData(selectedNode).raw.length === 0 ? (
+                                     {!getMagData().raw || getMagData().raw.length === 0 ? (
                                         <div className="text-center py-10 text-gray-400 text-sm">
                                             No raw readings available.
                                         </div>
@@ -246,18 +293,20 @@ export default function BuildingNodes() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
-                                                {getMagData(selectedNode).raw.map((reading, idx) => (
+                                                {getMagData().raw.map((reading, idx) => (
                                                     <tr key={idx} className="hover:bg-gray-50">
                                                         <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.x?.toFixed(2)}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.y?.toFixed(2)}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.z?.toFixed(2)}</td>
+                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_x?.toFixed(2) ?? reading.x?.toFixed(2)}</td>
+                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_y?.toFixed(2) ?? reading.y?.toFixed(2)}</td>
+                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_z?.toFixed(2) ?? reading.z?.toFixed(2)}</td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     )}
                                 </div>
+                            )}
+                            </>
                             )}
                         </div>
                     </>

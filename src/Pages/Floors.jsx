@@ -1,25 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { buildingService, floorService } from '../api/services';
 
 export default function Floors() {
     const { buildingId } = useParams();
     const navigate = useNavigate();
     const [floors, setFloors] = useState([]);
     const [showModal, setShowModal] = useState(false);
+    const [loading, setLoading] = useState(false);
     
     // Form & Edit State
-    const [newFloorName, setNewFloorName] = useState('');
     const [newFloorLevel, setNewFloorLevel] = useState('');
     const [mapPreview, setMapPreview] = useState(null);
     const [editingFloor, setEditingFloor] = useState(null);
 
+    const fetchFloors = async () => {
+        try {
+            setLoading(true);
+            const data = await buildingService.getFloors(buildingId);
+            const floorsList = Array.isArray(data) ? data : (data.floors || []);
+            setFloors(floorsList.sort((a, b) => a.floor_number - b.floor_number));
+        } catch (err) {
+            console.error("Failed to fetch floors:", err);
+            setFloors([]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const allFloors = storage.load(KEYS.FLOORS, []);
-        const buildingFloors = allFloors.filter(f => f.buildingId === buildingId);
-        // Sort by level
-        buildingFloors.sort((a, b) => a.level - b.level);
-        setFloors(buildingFloors);
+        if (buildingId) {
+            fetchFloors();
+        }
     }, [buildingId]);
 
     const handleFileChange = (e) => {
@@ -33,69 +45,53 @@ export default function Floors() {
         }
     };
 
-    const handleSaveFloor = () => {
-        if (!newFloorName.trim() || !newFloorLevel) return;
+    const handleSaveFloor = async () => {
+        if (!newFloorLevel) return;
 
-        const allFloors = storage.load(KEYS.FLOORS, []);
+        try {
+            if (editingFloor) {
+                // Edit Mode
+                await floorService.update(editingFloor.floor_id, {
+                    floor_number: parseInt(newFloorLevel, 10),
+                    map_img_url: mapPreview || editingFloor.map_img_url,
+                    building_id: parseInt(buildingId, 10)
+                });
+            } else {
+                // Create Mode
+                await floorService.create({
+                    building_id: parseInt(buildingId, 10),
+                    floor_number: parseInt(newFloorLevel, 10),
+                    map_img_url: mapPreview || ""
+                });
+            }
+            fetchFloors();
+            
+            setNewFloorLevel('');
+            setMapPreview(null);
+            setEditingFloor(null);
+            setShowModal(false);
 
-        if (editingFloor) {
-            // Edit Mode
-            const updatedFloors = allFloors.map(f =>
-                f.id === editingFloor.id ? { 
-                    ...f, 
-                    name: newFloorName.trim(), 
-                    level: parseInt(newFloorLevel, 10),
-                    mapImage: mapPreview || f.mapImage // Keep existing map if no new one provided
-                } : f
-            );
-            storage.save(KEYS.FLOORS, updatedFloors);
-            
-            // Update local state
-            const buildingFloors = updatedFloors.filter(f => f.buildingId === buildingId);
-            buildingFloors.sort((a, b) => a.level - b.level);
-            setFloors(buildingFloors);
-        } else {
-            // Create Mode
-            const newFloor = {
-                id: Date.now().toString(),
-                buildingId,
-                name: newFloorName.trim(),
-                level: parseInt(newFloorLevel, 10),
-                mapImage: mapPreview, // Can be null
-                createdAt: new Date().toISOString()
-            };
-            const updatedFloors = [...allFloors, newFloor];
-            storage.save(KEYS.FLOORS, updatedFloors);
-            
-             // Update local state
-            const buildingFloors = updatedFloors.filter(f => f.buildingId === buildingId);
-            buildingFloors.sort((a, b) => a.level - b.level);
-            setFloors(buildingFloors);
+        } catch (err) {
+            console.error("Failed to save floor:", err);
+            alert("Failed to save floor. Please check inputs.");
         }
-
-        setNewFloorName('');
-        setNewFloorLevel('');
-        setMapPreview(null);
-        setEditingFloor(null);
-        setShowModal(false);
     };
 
-    const handleDeleteFloor = (id, e) => {
+    const handleDeleteFloor = async (id, e) => {
          e.stopPropagation();
         if (window.confirm('Are you sure you want to delete this floor?')) {
-            const allFloors = storage.load(KEYS.FLOORS, []);
-            const updatedFloors = allFloors.filter(f => f.id !== id);
-            storage.save(KEYS.FLOORS, updatedFloors);
-            
-            const buildingFloors = updatedFloors.filter(f => f.buildingId === buildingId);
-            buildingFloors.sort((a, b) => a.level - b.level);
-            setFloors(buildingFloors);
+            try {
+                await floorService.delete(id);
+                setFloors(floors.filter(f => f.floor_id !== id));
+            } catch (err) {
+                console.error("Failed to delete floor:", err);
+                alert("Failed to delete floor.");
+            }
         }
     };
 
     const openCreateModal = () => {
         setEditingFloor(null);
-        setNewFloorName('');
         setNewFloorLevel('');
         setMapPreview(null);
         setShowModal(true);
@@ -104,9 +100,8 @@ export default function Floors() {
     const openEditModal = (e, floor) => {
         e.stopPropagation();
         setEditingFloor(floor);
-        setNewFloorName(floor.name);
-        setNewFloorLevel(floor.level);
-        setMapPreview(floor.mapImage);
+        setNewFloorLevel(floor.floor_number);
+        setMapPreview(floor.map_img_url);
         setShowModal(true);
     };
 
@@ -128,15 +123,17 @@ export default function Floors() {
                 </button>
             </div>
 
-            {/* list */}
+            {/* List */}
             <div className="grid gap-4">
-                {floors.length > 0 ? (
+                {loading && floors.length === 0 ? (
+                     <div className="text-center py-4 text-gray-500">Loading floors...</div>
+                ) : floors.length > 0 ? (
                     floors.map(floor => (
-                        <div key={floor.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-[var(--color-primary)] transition-all">
+                        <div key={floor.floor_id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-[var(--color-primary)] transition-all">
                             <div className="flex items-center gap-6">
                                 <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 border border-gray-200 relative group/image">
-                                    {floor.mapImage ? (
-                                        <img src={floor.mapImage} alt="Map" className="w-full h-full object-cover" />
+                                    {floor.map_img_url ? (
+                                        <img src={floor.map_img_url} alt="Map" className="w-full h-full object-cover" />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center text-gray-400 bg-gray-50">
                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
@@ -146,15 +143,15 @@ export default function Floors() {
                                     )}
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-gray-900">{floor.name}</h3>
-                                    <p className="text-sm text-gray-500">Level {floor.level} • {new Date(floor.createdAt).toLocaleDateString()}</p>
+                                    <h3 className="text-lg font-bold text-gray-900">Floor {floor.floor_number}</h3>
+                                    <p className="text-sm text-gray-500">{floor.created_at ? new Date(floor.created_at).toLocaleDateString() : 'N/A'}</p>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-3">
-                                {floor.mapImage ? (
+                                {floor.map_img_url ? (
                                     <button 
-                                        onClick={() => navigate(`/floors/${floor.id}/map`)}
+                                        onClick={() => navigate(`/floors/${floor.floor_id}/map`)}
                                         className="px-4 py-2 bg-blue-50 text-blue-600 font-bold rounded-xl hover:bg-blue-100 transition-all text-sm"
                                     >
                                         Open Map Editor
@@ -183,7 +180,7 @@ export default function Floors() {
                                         </svg>
                                     </button>
                                     <button 
-                                        onClick={(e) => handleDeleteFloor(floor.id, e)}
+                                        onClick={(e) => handleDeleteFloor(floor.floor_id, e)}
                                         className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                                         title="Delete Floor"
                                     >
@@ -219,28 +216,16 @@ export default function Floors() {
                         </div>
                         
                         <div className="space-y-4">
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="col-span-2">
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Floor Name</label>
-                                    <input 
-                                        type="text" 
-                                        autoFocus
-                                        value={newFloorName}
-                                        onChange={(e) => setNewFloorName(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none transition-all"
-                                        placeholder="e.g. Ground Floor"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-700 mb-1">Level No.</label>
-                                    <input 
-                                        type="number" 
-                                        value={newFloorLevel}
-                                        onChange={(e) => setNewFloorLevel(e.target.value)}
-                                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none transition-all"
-                                        placeholder="0"
-                                    />
-                                </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Floor Number <span className="text-red-500">*</span></label>
+                                <input 
+                                    type="number" 
+                                    autoFocus
+                                    value={newFloorLevel}
+                                    onChange={(e) => setNewFloorLevel(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none transition-all"
+                                    placeholder="0"
+                                />
                             </div>
 
                             <div>
@@ -279,7 +264,7 @@ export default function Floors() {
                                 </button>
                                 <button 
                                     onClick={handleSaveFloor}
-                                    disabled={!newFloorName || !newFloorLevel}
+                                    disabled={!newFloorLevel}
                                     className="px-5 py-2.5 bg-[var(--color-primary)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-blue-900/10 hover:shadow-xl hover:-translate-y-0.5 transition-all"
                                 >
                                     {editingFloor ? 'Save Changes' : 'Create Floor'}

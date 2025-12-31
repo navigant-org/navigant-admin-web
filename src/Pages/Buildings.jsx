@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { buildingService } from '../api/services';
 import Breadcrumbs from '../Components/Breadcrumbs';
 
 export default function Buildings() {
@@ -10,63 +10,82 @@ export default function Buildings() {
     const [newBuildingName, setNewBuildingName] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [editingBuilding, setEditingBuilding] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
     const breadcrumbItems = [
         { label: 'Buildings', path: '/buildings' },
     ];
 
+    const fetchBuildings = async () => {
+        try {
+            setLoading(true);
+            const data = await buildingService.getAll();
+            // The API returns { buildings: [...], count: ... }
+            if (data.buildings) {
+               setBuildings(data.buildings.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+            } else {
+               setBuildings([]);
+            }
+        } catch (err) {
+            console.error("Failed to fetch buildings:", err);
+            setError("Failed to load buildings.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
-        const loadedBuildings = storage.load(KEYS.BUILDINGS, []);
-        // Sort by newest first
-        setBuildings(loadedBuildings.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+        fetchBuildings();
     }, []);
 
-    const saveBuildings = (updatedBuildings) => {
-        storage.save(KEYS.BUILDINGS, updatedBuildings);
-        setBuildings(updatedBuildings);
-    };
-
-    const handleSaveBuilding = () => {
+    const handleSaveBuilding = async () => {
         if (!newBuildingName.trim()) return;
 
-        if (editingBuilding) {
-            // Edit Mode
-            const updatedBuildings = buildings.map(b => 
-                b.id === editingBuilding.id ? { ...b, name: newBuildingName.trim() } : b
-            );
-            saveBuildings(updatedBuildings);
-        } else {
-            // Create Mode
-            const newBuilding = {
-                id: Date.now().toString(),
-                name: newBuildingName.trim(),
-                createdAt: new Date().toISOString(),
-                floorsCount: 0 
-            };
-            // Simple duplicate check
-            if (buildings.some(b => b.name.toLowerCase() === newBuilding.name.toLowerCase())) {
-                alert('A building with this name already exists.');
-                return;
+        try {
+            if (editingBuilding) {
+                // Edit Mode
+                await buildingService.update(editingBuilding.building_id, { 
+                    name: newBuildingName.trim(), 
+                    description: editingBuilding.description 
+                });
+            } else {
+                // Create Mode
+                // Check for duplicates in the current list first (optional UI optimization)
+                if (buildings.some(b => b.name.toLowerCase() === newBuildingName.trim().toLowerCase())) {
+                    alert('A building with this name already exists.');
+                    return;
+                }
+                
+                await buildingService.create({
+                    name: newBuildingName.trim(),
+                    description: '' // Optional description
+                });
             }
-            // Add to beginning of list
-            saveBuildings([newBuilding, ...buildings]);
+            
+            // Refresh list
+            fetchBuildings();
+            setNewBuildingName('');
+            setEditingBuilding(null);
+            setShowModal(false);
+            
+        } catch (err) {
+            console.error("Failed to save building:", err);
+            alert("Failed to save building. Please try again.");
         }
-
-        setNewBuildingName('');
-        setEditingBuilding(null);
-        setShowModal(false);
     };
 
-    const handleDeleteBuilding = (id, e) => {
+    const handleDeleteBuilding = async (id, e) => {
         e.stopPropagation();
-        if (window.confirm('Are you sure? This will delete all floors associated with this building.')) {
-            const updatedBuildings = buildings.filter(b => b.id !== id);
-            saveBuildings(updatedBuildings);
-            
-            // Cascading delete: Remove floors associated with this building
-            const allFloors = storage.load(KEYS.FLOORS, []);
-            const keptFloors = allFloors.filter(f => f.buildingId !== id);
-            storage.save(KEYS.FLOORS, keptFloors);
+        if (window.confirm('Are you sure? This will delete the building and all associated data.')) {
+            try {
+                await buildingService.delete(id);
+                // Refresh list
+                setBuildings(buildings.filter(b => b.building_id !== id));
+            } catch (err) {
+                 console.error("Failed to delete building:", err);
+                 alert("Failed to delete building.");
+            }
         }
     };
 
@@ -122,65 +141,83 @@ export default function Buildings() {
                  </div>
             </div>
 
-            {/* Buildings Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredBuildings.length > 0 ? (
-                    filteredBuildings.map(building => (
-                        <div 
-                            key={building.id}
-                            onClick={() => navigate(`/buildings/${building.id}/floors`)}
-                            className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
-                        >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors"></div>
-                            
-                            <div className="relative z-10">
-                                <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center mb-4 text-gray-600 group-hover:bg-[var(--color-primary)] group-hover:text-white transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
-                                    </svg>
-                                </div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-1">{building.name}</h3>
-                                <p className="text-sm text-gray-500 mb-4">{new Date(building.createdAt).toLocaleDateString()}</p>
+            {/* Error Message */}
+            {error && (
+                <div className="bg-red-50 text-red-600 p-4 rounded-xl">
+                    {error}
+                </div>
+            )}
+
+            {/* Loading State */}
+            {loading && buildings.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[1, 2, 3].map(i => (
+                         <div key={i} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm animate-pulse h-48"></div>
+                    ))}
+                </div>
+            ) : (
+                /* Buildings Grid */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredBuildings.length > 0 ? (
+                        filteredBuildings.map(building => (
+                            <div 
+                                key={building.building_id}
+                                onClick={() => navigate(`/buildings/${building.building_id}/floors`)}
+                                className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden"
+                            >
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors"></div>
                                 
-                                <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-50">
-                                    <span className="text-xs font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
-                                        View Floors
-                                    </span>
+                                <div className="relative z-10">
+                                    <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center mb-4 text-gray-600 group-hover:bg-[var(--color-primary)] group-hover:text-white transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-900 mb-1">{building.name}</h3>
+                                    <p className="text-sm text-gray-500 mb-4">
+                                        {building.created_at ? new Date(building.created_at).toLocaleDateString() : 'N/A'}
+                                    </p>
                                     
-                                    <div className="flex items-center gap-1">
-                                        <button 
-                                            onClick={(e) => openEditModal(e, building)}
-                                            className="text-gray-400 hover:text-blue-500 transition-colors p-2 hover:bg-blue-50 rounded-lg"
-                                            title="Edit Building"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.69 1.07l-3.214.801a.75.75 0 01-.928-.928l.8-3.214a4.5 4.5 0 011.07-1.691z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 0.225l-2.6 2.6" />
-                                            </svg>
-                                        </button>
-                                        <button 
-                                            onClick={(e) => handleDeleteBuilding(building.id, e)}
-                                            className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
-                                            title="Delete Building"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                                            </svg>
-                                        </button>
+                                    <div className="flex items-center justify-between mt-6 pt-6 border-t border-gray-50">
+                                        <span className="text-xs font-bold bg-gray-100 text-gray-600 px-3 py-1 rounded-full">
+                                            View Floors
+                                        </span>
+                                        
+                                        <div className="flex items-center gap-1">
+                                            <button 
+                                                onClick={(e) => openEditModal(e, building)}
+                                                className="text-gray-400 hover:text-blue-500 transition-colors p-2 hover:bg-blue-50 rounded-lg"
+                                                title="Edit Building"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.69 1.07l-3.214.801a.75.75 0 01-.928-.928l.8-3.214a4.5 4.5 0 011.07-1.691z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 0.225l-2.6 2.6" />
+                                                </svg>
+                                            </button>
+                                            <button 
+                                                onClick={(e) => handleDeleteBuilding(building.building_id, e)}
+                                                className="text-gray-400 hover:text-red-500 transition-colors p-2 hover:bg-red-50 rounded-lg"
+                                                title="Delete Building"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                        ))
+                    ) : (
+                        <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
+                            <p className="mb-4">No buildings found.</p>
+                            <button onClick={openCreateModal} className="text-[var(--color-primary)] font-bold hover:underline">
+                                Create the first one
+                            </button>
                         </div>
-                    ))
-                ) : (
-                    <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50 rounded-3xl border border-dashed border-gray-200">
-                        <p className="mb-4">No buildings found.</p>
-                        <button onClick={openCreateModal} className="text-[var(--color-primary)] font-bold hover:underline">
-                            Create the first one
-                        </button>
-                    </div>
-                )}
-            </div>
+                    )}
+                </div>
+            )}
 
             {/* Modal */}
             {showModal && (

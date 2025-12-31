@@ -1,31 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, useParams, NavLink, useNavigate } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { buildingService } from '../api/services';
 import Breadcrumbs from './Breadcrumbs';
 
 export default function BuildingLayout() {
     const { buildingId } = useParams();
     const navigate = useNavigate();
     const [building, setBuilding] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const buildings = storage.load(KEYS.BUILDINGS, []);
-        const currentBuilding = buildings.find(b => b.id === buildingId);
-        
-        if (!currentBuilding) {
-             // Handle not found
-             navigate('/buildings');
-             return;
+        loadBuilding();
+    }, [buildingId]);
+
+    const loadBuilding = async () => {
+        try {
+            setLoading(true);
+            const data = await buildingService.getById(buildingId);
+            setBuilding(data);
+        } catch (err) {
+            console.error("Failed to load building:", err);
+            // Navigate back if building not found
+            navigate('/buildings');
+        } finally {
+            setLoading(false);
         }
-        setBuilding(currentBuilding);
-    }, [buildingId, navigate]);
+    };
 
     const breadcrumbItems = [
         { label: 'Buildings', path: '/buildings' },
         { label: building?.name || 'Loading...', path: null },
     ];
 
-    if (!building) return <div className="p-8">Loading...</div>;
+    if (loading) return <div className="p-8">Loading...</div>;
+    if (!building) return null;
 
     return (
         <div className="space-y-6">

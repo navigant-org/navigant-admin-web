@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import storage, { KEYS } from '../utils/storage';
+import { buildingService, edgeService } from '../api/services';
 
 export default function BuildingEdges() {
     const { buildingId } = useParams();
@@ -9,38 +9,47 @@ export default function BuildingEdges() {
     const [floorsMap, setFloorsMap] = useState({});
 
     useEffect(() => {
-        loadData();
+        if (buildingId) {
+            loadData();
+        }
     }, [buildingId]);
 
-    const loadData = () => {
-        const allFloors = storage.load(KEYS.FLOORS, []);
-        const buildingFloors = allFloors.filter(f => f.buildingId === buildingId);
-        const fMap = {};
-        buildingFloors.forEach(f => fMap[f.id] = f);
-        setFloorsMap(fMap);
+    const loadData = async () => {
+        try {
+            // Load floors first for mapping names
+            const floorsData = await buildingService.getFloors(buildingId);
+            const floorsList = Array.isArray(floorsData) ? floorsData : (floorsData.floors || []);
+            const fMap = {};
+            floorsList.forEach(f => fMap[f.floor_id] = f);
+            setFloorsMap(fMap);
 
-        const allNodes = storage.load(KEYS.NODES, []);
-        const floorIds = new Set(buildingFloors.map(f => f.id));
-        const buildingNodes = allNodes.filter(n => floorIds.has(n.floorId));
-        
-        const nMap = {};
-        buildingNodes.forEach(n => nMap[n.id] = n);
-        setNodesMap(nMap);
+            // Load nodes
+            const nodesData = await buildingService.getNodes(buildingId);
+            const nodesList = Array.isArray(nodesData) ? nodesData : (nodesData.nodes || []);
+            const nMap = {};
+            nodesList.forEach(n => nMap[n.node_id] = n);
+            setNodesMap(nMap);
 
-        const allEdges = storage.load(KEYS.EDGES, []);
-        // Check both source and target are in our buildingNodes map
-        // (Assuming edges are mostly intra-building, or at least one end should be here)
-        // strict check: both ends in this building
-        const buildingEdges = allEdges.filter(e => nMap[e.source] && nMap[e.target]);
-        setEdges(buildingEdges);
+            // Load edges
+            const edgesData = await buildingService.getEdges(buildingId);
+             // API typical response
+            const edgesList = Array.isArray(edgesData) ? edgesData : (edgesData.edges || []);
+            setEdges(edgesList);
+
+        } catch (err) {
+            console.error("Failed to load data:", err);
+        }
     };
 
-    const handleDelete = (edgeId) => {
+    const handleDelete = async (edgeId) => {
         if (window.confirm('Delete this connection?')) {
-            const allEdges = storage.load(KEYS.EDGES, []);
-            const updatedEdges = allEdges.filter(e => e.id !== edgeId);
-            storage.save(KEYS.EDGES, updatedEdges);
-            loadData();
+            try {
+                await edgeService.delete(edgeId);
+                setEdges(edges.filter(e => e.edge_id !== edgeId));
+            } catch (err) {
+                console.error("Failed to delete edge:", err);
+                alert("Failed to delete edge.");
+            }
         }
     };
 
@@ -69,24 +78,24 @@ export default function BuildingEdges() {
                             </tr>
                         ) : (
                             edges.map(edge => {
-                                const source = nodesMap[edge.source];
-                                const target = nodesMap[edge.target];
+                                const source = nodesMap[edge.start_node_id];
+                                const target = nodesMap[edge.end_node_id];
                                 return (
-                                    <tr key={edge.id} className="hover:bg-gray-50/50">
+                                    <tr key={edge.edge_id} className="hover:bg-gray-50/50">
                                         <td className="px-6 py-4">
-                                            <div className="font-bold text-gray-900">{source?.label}</div>
-                                            <div className="text-xs text-gray-500">{floorsMap[source?.floorId]?.name}</div>
+                                            <div className="font-bold text-gray-900">{source?.name || source?.label || `Node ${edge.start_node_id}`}</div>
+                                            <div className="text-xs text-gray-500">{floorsMap[source?.floor_id]?.name || floorsMap[source?.floor_id]?.floor_number}</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="font-bold text-gray-900">{target?.label}</div>
-                                            <div className="text-xs text-gray-500">{floorsMap[target?.floorId]?.name}</div>
+                                            <div className="font-bold text-gray-900">{target?.name || target?.label || `Node ${edge.end_node_id}`}</div>
+                                            <div className="text-xs text-gray-500">{floorsMap[target?.floor_id]?.name || floorsMap[target?.floor_id]?.floor_number}</div>
                                         </td>
                                         <td className="px-6 py-4 text-gray-600 font-mono">
-                                            {edge.distance.toFixed(2)}
+                                            {edge.distance?.toFixed(2)}
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                              <button 
-                                                onClick={() => handleDelete(edge.id)}
+                                                onClick={() => handleDelete(edge.edge_id)}
                                                 className="text-red-600 hover:text-red-800 font-medium text-xs px-2 py-1 bg-red-50 rounded-lg"
                                             >
                                                 Delete
