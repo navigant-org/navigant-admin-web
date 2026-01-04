@@ -8,6 +8,7 @@ export default function BuildingNodes() {
     const [nodes, setNodes] = useState([]);
     const [floors, setFloors] = useState([]);
     const [filterFloorId, setFilterFloorId] = useState('all');
+    const [loading, setLoading] = useState(false);
 
     // Selection & Details State
     const [selectedNode, setSelectedNode] = useState(null);
@@ -35,6 +36,7 @@ export default function BuildingNodes() {
 
     const loadData = async () => {
         try {
+            setLoading(true);
             // Load floors first for mapping names
             const floorsData = await buildingService.getFloors(buildingId);
             const floorsList = Array.isArray(floorsData) ? floorsData : (floorsData.floors || []);
@@ -47,6 +49,8 @@ export default function BuildingNodes() {
             setNodes(nodesList);
         } catch (err) {
             console.error("Failed to load data:", err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -156,7 +160,30 @@ export default function BuildingNodes() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-sm">
-                            {filteredNodes.length === 0 ? (
+                            {loading ? (
+                                // Shimmer loading skeleton
+                                <>
+                                    {[1, 2, 3, 4, 5].map(i => (
+                                        <tr key={i} className="animate-pulse">
+                                            <td className="px-6 py-4">
+                                                <div className="h-4 bg-gray-200 rounded w-32"></div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="h-4 bg-gray-200 rounded w-24"></div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="h-4 bg-gray-200 rounded w-28"></div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex justify-end gap-2">
+                                                    <div className="h-6 bg-gray-200 rounded w-12"></div>
+                                                    <div className="h-6 bg-gray-200 rounded w-14"></div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </>
+                            ) : filteredNodes.length === 0 ? (
                                 <tr>
                                     <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
                                         No nodes found. Go to Floors &gt; Map Editor to create nodes.

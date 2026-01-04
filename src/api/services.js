@@ -71,6 +71,10 @@ export const floorService = {
     const response = await apiClient.delete(`/floors/${id}`);
     return response.data;
   },
+  getGraph: async (id) => {
+    const response = await apiClient.get(`/floors/${id}/graph`);
+    return response.data;
+  },
 };
 
 // Node Services

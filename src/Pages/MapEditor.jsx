@@ -10,6 +10,7 @@ export default function MapEditor() {
     // Data State
     const [floor, setFloor] = useState(null);
     const [building, setBuilding] = useState(null);
+    const [loading, setLoading] = useState(true);
 
     // Editor State
     const [nodes, setNodes] = useState([]);
@@ -41,47 +42,50 @@ export default function MapEditor() {
 
     const loadData = async () => {
         try {
-            // Load floor
+            setLoading(true);
+            
+            // Use the new graph endpoint - gets floor, nodes, edges, and scale in one call!
+            const graphData = await floorService.getGraph(floorId);
+            console.log("Graph data received:", graphData);
+            
+            // The response doesn't include full floor details, so we still need to fetch floor and building
             const floorData = await floorService.getById(floorId);
             setFloor(floorData);
-            if (floorData.scale) {
-                setScaleRatio(floorData.scale);
-            }
             
-            // Load building
+            // Load building for breadcrumbs
             if (floorData.building_id) {
                 const buildingData = await buildingService.getById(floorData.building_id);
                 setBuilding(buildingData);
             }
 
-            // Load Nodes and Edges for this floor
-            if (floorData.building_id) {
-                const nodesData = await buildingService.getNodes(floorData.building_id);
-                const nodesList = Array.isArray(nodesData) ? nodesData : (nodesData.nodes || []);
-                const floorNodes = nodesList.filter(n => n.floor_id == floorId);
-                
-                // Map API fields to UI fields
-                setNodes(floorNodes.map(n => ({
-                    ...n,
-                    id: n.node_id,
-                    x: n.x_coordinate,
-                    y: n.y_coordinate,
-                    label: n.name
-                })));
-                
-                // Load Edges
-                const edgesData = await buildingService.getEdges(floorData.building_id);
-                const edgesList = Array.isArray(edgesData) ? edgesData : (edgesData.edges || []);
-                const floorEdges = edgesList.filter(e => e.floor_id == floorId);
-                setEdges(floorEdges.map(e => ({
-                     ...e,
-                     id: e.edge_id,
-                     source: e.start_node_id,
-                     target: e.end_node_id
-                })));
+            // Set scale from graph response
+            if (graphData.scale) {
+                setScaleRatio(graphData.scale);
             }
+            
+            // Map nodes from graph response
+            const nodesList = graphData.nodes || [];
+            setNodes(nodesList.map(n => ({
+                ...n,
+                id: n.node_id,
+                x: n.x_coordinate,
+                y: n.y_coordinate,
+                label: n.name
+            })));
+            
+            // Map edges from graph response
+            const edgesList = graphData.edges || [];
+            setEdges(edgesList.map(e => ({
+                ...e,
+                id: e.edge_id,
+                source: e.start_node_id,
+                target: e.end_node_id
+            })));
+            
         } catch (err) {
             console.error("Failed to load map data:", err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -257,7 +261,43 @@ export default function MapEditor() {
         { label: floor?.name || `Floor ${floor?.floor_number || ''}`, path: null },
     ];
 
-    if (!floor) return <div className="p-8 text-center text-gray-500">Loading Map Editor...</div>;
+    // Loading State
+    if (loading || !floor) {
+        return (
+            <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 h-[calc(100vh-8rem)] flex flex-col">
+                <div className="animate-pulse space-y-4">
+                    {/* Breadcrumb skeleton */}
+                    <div className="h-8 bg-gray-200 rounded w-64"></div>
+                    
+                    {/* Toolbar skeleton */}
+                    <div className="flex justify-between items-center pb-4 border-b border-gray-100">
+                        <div>
+                            <div className="h-6 bg-gray-200 rounded w-48 mb-2"></div>
+                            <div className="h-4 bg-gray-100 rounded w-32"></div>
+                        </div>
+                        <div className="flex gap-4">
+                            <div className="h-9 bg-gray-200 rounded-xl w-48"></div>
+                            <div className="h-9 bg-gray-200 rounded-xl w-24"></div>
+                        </div>
+                    </div>
+                    
+                    {/* Canvas skeleton */}
+                    <div className="flex-1 bg-gray-100 rounded-xl animate-pulse flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="inline-block">
+                                <svg className="animate-spin h-12 w-12 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <p className="mt-4 text-gray-500 font-medium">Loading Map Editor...</p>
+                            <p className="text-sm text-gray-400 mt-1">Fetching floor data, nodes, and edges</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     
     if (!floor.map_img_url) {
          return (

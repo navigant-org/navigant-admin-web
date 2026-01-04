@@ -7,6 +7,7 @@ export default function BuildingEdges() {
     const [edges, setEdges] = useState([]);
     const [nodesMap, setNodesMap] = useState({});
     const [floorsMap, setFloorsMap] = useState({});
+    const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         if (buildingId) {
@@ -16,6 +17,7 @@ export default function BuildingEdges() {
 
     const loadData = async () => {
         try {
+            setLoading(true);
             // Load floors first for mapping names
             const floorsData = await buildingService.getFloors(buildingId);
             const floorsList = Array.isArray(floorsData) ? floorsData : (floorsData.floors || []);
@@ -38,6 +40,8 @@ export default function BuildingEdges() {
 
         } catch (err) {
             console.error("Failed to load data:", err);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -70,7 +74,31 @@ export default function BuildingEdges() {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-sm">
-                        {edges.length === 0 ? (
+                        {loading ? (
+                            // Shimmer loading skeleton
+                            <>
+                                {[1, 2, 3, 4, 5].map(i => (
+                                    <tr key={i} className="animate-pulse">
+                                        <td className="px-6 py-4">
+                                            <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+                                            <div className="h-3 bg-gray-100 rounded w-24"></div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
+                                            <div className="h-3 bg-gray-100 rounded w-24"></div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="h-4 bg-gray-200 rounded w-20"></div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex justify-end">
+                                                <div className="h-6 bg-gray-200 rounded w-14"></div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </>
+                        ) : edges.length === 0 ? (
                             <tr>
                                 <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
                                     No edges found. Connect nodes in the Map Editor.

@@ -126,7 +126,29 @@ export default function Floors() {
             {/* List */}
             <div className="grid gap-4">
                 {loading && floors.length === 0 ? (
-                     <div className="text-center py-4 text-gray-500">Loading floors...</div>
+                     // Shimmer loading skeleton
+                     <>
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm animate-pulse">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-6 flex-1">
+                                        <div className="w-16 h-16 bg-gray-200 rounded-xl"></div>
+                                        <div className="flex-1">
+                                            <div className="h-5 bg-gray-200 rounded w-24 mb-2"></div>
+                                            <div className="h-4 bg-gray-100 rounded w-32"></div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-10 bg-gray-200 rounded-xl w-32"></div>
+                                        <div className="flex gap-1">
+                                            <div className="w-9 h-9 bg-gray-200 rounded-xl"></div>
+                                            <div className="w-9 h-9 bg-gray-200 rounded-xl"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </>
                 ) : floors.length > 0 ? (
                     floors.map(floor => (
                         <div key={floor.floor_id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between group hover:border-[var(--color-primary)] transition-all">
