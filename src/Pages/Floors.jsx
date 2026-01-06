@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { buildingService, floorService } from '../api/services';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 export default function Floors() {
     const { buildingId } = useParams();
@@ -11,8 +12,10 @@ export default function Floors() {
     
     // Form & Edit State
     const [newFloorLevel, setNewFloorLevel] = useState('');
+    const [mapFile, setMapFile] = useState(null);
     const [mapPreview, setMapPreview] = useState(null);
     const [editingFloor, setEditingFloor] = useState(null);
+    const [uploading, setUploading] = useState(false);
 
     const fetchFloors = async () => {
         try {
@@ -37,6 +40,8 @@ export default function Floors() {
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (file) {
+            setMapFile(file);
+            // Create local preview
             const reader = new FileReader();
             reader.onloadend = () => {
                 setMapPreview(reader.result);
@@ -49,11 +54,26 @@ export default function Floors() {
         if (!newFloorLevel) return;
 
         try {
+            let mapUrl = editingFloor?.map_img_url || "";
+            
+            // Upload to Cloudinary if a new file is selected
+            if (mapFile) {
+                setUploading(true);
+                try {
+                    mapUrl = await uploadToCloudinary(mapFile);
+                } catch (uploadErr) {
+                    alert(`Failed to upload map: ${uploadErr.message}`);
+                    setUploading(false);
+                    return;
+                }
+                setUploading(false);
+            }
+
             if (editingFloor) {
                 // Edit Mode
                 await floorService.update(editingFloor.floor_id, {
                     floor_number: parseInt(newFloorLevel, 10),
-                    map_img_url: mapPreview || editingFloor.map_img_url,
+                    map_img_url: mapUrl,
                     building_id: parseInt(buildingId, 10)
                 });
             } else {
@@ -61,12 +81,13 @@ export default function Floors() {
                 await floorService.create({
                     building_id: parseInt(buildingId, 10),
                     floor_number: parseInt(newFloorLevel, 10),
-                    map_img_url: mapPreview || ""
+                    map_img_url: mapUrl
                 });
             }
             fetchFloors();
             
             setNewFloorLevel('');
+            setMapFile(null);
             setMapPreview(null);
             setEditingFloor(null);
             setShowModal(false);
@@ -74,6 +95,7 @@ export default function Floors() {
         } catch (err) {
             console.error("Failed to save floor:", err);
             alert("Failed to save floor. Please check inputs.");
+            setUploading(false);
         }
     };
 
@@ -93,6 +115,7 @@ export default function Floors() {
     const openCreateModal = () => {
         setEditingFloor(null);
         setNewFloorLevel('');
+        setMapFile(null);
         setMapPreview(null);
         setShowModal(true);
     };
@@ -101,6 +124,7 @@ export default function Floors() {
         e.stopPropagation();
         setEditingFloor(floor);
         setNewFloorLevel(floor.floor_number);
+        setMapFile(null);
         setMapPreview(floor.map_img_url);
         setShowModal(true);
     };
@@ -286,10 +310,16 @@ export default function Floors() {
                                 </button>
                                 <button 
                                     onClick={handleSaveFloor}
-                                    disabled={!newFloorLevel}
-                                    className="px-5 py-2.5 bg-[var(--color-primary)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-blue-900/10 hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                                    disabled={!newFloorLevel || uploading}
+                                    className="px-5 py-2.5 bg-[var(--color-primary)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-blue-900/10 hover:shadow-xl hover:-translate-y-0.5 transition-all flex items-center gap-2"
                                 >
-                                    {editingFloor ? 'Save Changes' : 'Create Floor'}
+                                    {uploading && (
+                                        <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    )}
+                                    {uploading ? 'Uploading...' : editingFloor ? 'Save Changes' : 'Create Floor'}
                                 </button>
                             </div>
                         </div>
