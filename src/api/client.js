@@ -2,7 +2,7 @@ import axios from 'axios';
 
 import storage, { KEYS } from '../utils/storage';
 
-const API_BASE_URL = 'https://navigant.azurewebsites.net/api';
+const API_BASE_URL = import.meta.env.VITE_BASE_URL || 'http://localhost:5000/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
