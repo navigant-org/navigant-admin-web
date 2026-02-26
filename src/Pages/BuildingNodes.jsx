@@ -19,6 +19,7 @@ export default function BuildingNodes() {
     // Edit State (Modal)
     const [editingNode, setEditingNode] = useState(null);
     const [editLabel, setEditLabel] = useState('');
+    const [editNodeType, setEditNodeType] = useState('room');
 
     useEffect(() => {
         if (buildingId) {
@@ -94,6 +95,7 @@ export default function BuildingNodes() {
         if (e) e.stopPropagation();
         setEditingNode(node);
         setEditLabel(node.name || node.label || '');
+        setEditNodeType(node.node_type || 'room');
     };
 
     const saveEdit = async () => {
@@ -101,15 +103,16 @@ export default function BuildingNodes() {
         try {
             // The API expects whatever fields we want to update.
             await nodeService.update(editingNode.node_id, {
-                name: editLabel
+                name: editLabel,
+                node_type: editNodeType
                 // keep other fields same if needed, or API handles partial updates
             });
 
             // Refresh or update locally
-            setNodes(nodes.map(n => n.node_id === editingNode.node_id ? { ...n, name: editLabel } : n));
+            setNodes(nodes.map(n => n.node_id === editingNode.node_id ? { ...n, name: editLabel, node_type: editNodeType } : n));
             
             if (selectedNode?.node_id === editingNode?.node_id) {
-                setSelectedNode({ ...selectedNode, name: editLabel });
+                setSelectedNode({ ...selectedNode, name: editLabel, node_type: editNodeType });
             }
 
             setEditingNode(null);
@@ -154,6 +157,7 @@ export default function BuildingNodes() {
                         <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold sticky top-0 z-10">
                             <tr>
                                 <th className="px-6 py-4">Label</th>
+                                <th className="px-6 py-4">Type</th>
                                 <th className="px-6 py-4">Floor</th>
                                 <th className="px-6 py-4">Position</th>
                                 <th className="px-6 py-4 text-right">Actions</th>
@@ -167,6 +171,9 @@ export default function BuildingNodes() {
                                         <tr key={i} className="animate-pulse">
                                             <td className="px-6 py-4">
                                                 <div className="h-4 bg-gray-200 rounded w-32"></div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="h-4 bg-gray-200 rounded w-20"></div>
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="h-4 bg-gray-200 rounded w-24"></div>
@@ -185,7 +192,7 @@ export default function BuildingNodes() {
                                 </>
                             ) : filteredNodes.length === 0 ? (
                                 <tr>
-                                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                                         No nodes found. Go to Floors &gt; Map Editor to create nodes.
                                     </td>
                                 </tr>
@@ -197,6 +204,17 @@ export default function BuildingNodes() {
                                         className={`cursor-pointer transition-colors ${selectedNode?.node_id === node.node_id ? 'bg-blue-50 border-l-4 border-l-[var(--color-primary)]' : 'hover:bg-gray-50/50'}`}
                                     >
                                         <td className="px-6 py-4 font-bold text-gray-900">{node.name || node.label || 'Unnamed'}</td>
+                                        <td className="px-6 py-4">
+                                            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                                node.node_type === 'room' ? 'bg-blue-100 text-blue-700' :
+                                                node.node_type === 'stairs' ? 'bg-orange-100 text-orange-700' :
+                                                node.node_type === 'corridor' ? 'bg-green-100 text-green-700' :
+                                                node.node_type === 'junction' ? 'bg-purple-100 text-purple-700' :
+                                                'bg-gray-100 text-gray-700'
+                                            }`}>
+                                                {node.node_type || 'room'}
+                                            </span>
+                                        </td>
                                         <td className="px-6 py-4 text-gray-600">{getFloorName(node.floor_id)}</td>
                                         <td className="px-6 py-4 text-gray-500 font-mono text-xs">
                                             x: {Math.round(node.x_coordinate ?? node.x)}, y: {Math.round(node.y_coordinate ?? node.y)}
@@ -233,7 +251,19 @@ export default function BuildingNodes() {
                         <div className="p-4 border-b border-gray-100 flex justify-between items-start bg-gray-50/50">
                             <div>
                                 <h4 className="text-lg font-bold text-gray-900">{selectedNode.name || selectedNode.label || 'Unnamed'}</h4>
-                                <p className="text-xs text-gray-500 mt-1">{getFloorName(selectedNode.floor_id)}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs text-gray-500">{getFloorName(selectedNode.floor_id)}</span>
+                                    <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                                        selectedNode.node_type === 'room' ? 'text-blue-600' :
+                                        selectedNode.node_type === 'stairs' ? 'text-orange-600' :
+                                        selectedNode.node_type === 'corridor' ? 'text-green-600' :
+                                        selectedNode.node_type === 'junction' ? 'text-purple-600' :
+                                        'text-gray-600'
+                                    }`}>
+                                        {selectedNode.node_type || 'room'}
+                                    </span>
+                                </div>
                             </div>
                             <button onClick={() => setSelectedNode(null)} className="text-gray-400 hover:text-gray-600">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -356,8 +386,22 @@ export default function BuildingNodes() {
                                     type="text" 
                                     value={editLabel}
                                     onChange={(e) => setEditLabel(e.target.value)}
-                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl"
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
+                                    placeholder="Enter node name"
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Type</label>
+                                <select 
+                                    value={editNodeType}
+                                    onChange={(e) => setEditNodeType(e.target.value)}
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all appearance-none cursor-pointer"
+                                >
+                                    <option value="room">Room</option>
+                                    <option value="stairs">Stairs</option>
+                                    <option value="corridor">Corridor</option>
+                                    <option value="junction">Junction</option>
+                                </select>
                             </div>
                             <div className="flex gap-3 pt-2">
                                 <button onClick={() => setEditingNode(null)} className="flex-1 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">Cancel</button>

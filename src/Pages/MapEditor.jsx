@@ -34,6 +34,7 @@ export default function MapEditor() {
     // Node Creation Modal State
     const [showNodeCreationModal, setShowNodeCreationModal] = useState(false);
     const [newNodeName, setNewNodeName] = useState('');
+    const [newNodeType, setNewNodeType] = useState('room'); // Default to room, but user can change
     const [tempNodePosition, setTempNodePosition] = useState(null);
 
     useEffect(() => {
@@ -104,6 +105,7 @@ export default function MapEditor() {
 
         setTempNodePosition({ x, y });
         setNewNodeName('');
+        setNewNodeType('room'); // Reset to default when opening
         setShowNodeCreationModal(true);
     };
 
@@ -116,7 +118,7 @@ export default function MapEditor() {
                 name: newNodeName.trim(),
                 x_coordinate: tempNodePosition.x,
                 y_coordinate: tempNodePosition.y,
-                node_type: 'room'
+                node_type: newNodeType
             };
 
             const createdNode = await nodeService.create(newNodeData);
@@ -141,6 +143,7 @@ export default function MapEditor() {
             setShowNodeCreationModal(false);
             setTempNodePosition(null);
             setNewNodeName('');
+            setNewNodeType('room');
             setActiveTool('select');
 
         } catch (err) {
@@ -454,23 +457,33 @@ export default function MapEditor() {
                                     {hoveredNodeId === node.id && (
                                         <g pointerEvents="none" style={{ zIndex: 50 }}>
                                             <rect 
-                                                x={node.x - ((node.label?.length || 4) * 7) / 2 - 8}
-                                                y={node.y - 30}
-                                                width={(node.label?.length || 4) * 7 + 16}
-                                                height="22"
-                                                rx="4"
-                                                fill="rgba(0,0,0,0.8)"
+                                                x={node.x - Math.max((node.label?.length || 4) * 7, 60) / 2 - 8}
+                                                y={node.y - 42}
+                                                width={Math.max((node.label?.length || 4) * 7, 60) + 16}
+                                                height="34"
+                                                rx="6"
+                                                fill="rgba(0,0,0,0.85)"
                                             />
                                             <text
                                                 x={node.x}
-                                                y={node.y - 19}
+                                                y={node.y - 30}
                                                 textAnchor="middle"
-                                                dy="0.3em"
                                                 fill="white"
                                                 fontSize="11"
                                                 fontWeight="bold"
                                             >
                                                 {node.label || 'Node'}
+                                            </text>
+                                            <text
+                                                x={node.x}
+                                                y={node.y - 18}
+                                                textAnchor="middle"
+                                                fill="rgba(255,255,255,0.7)"
+                                                fontSize="9"
+                                                fontWeight="bold"
+                                                className="uppercase"
+                                            >
+                                                {node.node_type || 'room'}
                                             </text>
                                         </g>
                                     )}
@@ -513,18 +526,37 @@ export default function MapEditor() {
                 <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm">
                          <h3 className="text-lg font-bold text-gray-900 mb-4 text-center">Name Node</h3>
-                         <input 
-                            type="text" 
-                            autoFocus
-                            value={newNodeName}
-                            onChange={(e) => setNewNodeName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && confirmCreateNode()}
-                            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-center font-bold mb-4"
-                            placeholder="Enter node name..."
-                        />
+                         <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-1">Node Name</label>
+                                <input 
+                                    type="text" 
+                                    autoFocus
+                                    value={newNodeName}
+                                    onChange={(e) => setNewNodeName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && confirmCreateNode()}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none transition-all"
+                                    placeholder="e.g. Room 101, Lobby..."
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1 px-1">Node Type</label>
+                                <select 
+                                    value={newNodeType}
+                                    onChange={(e) => setNewNodeType(e.target.value)}
+                                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent outline-none transition-all appearance-none cursor-pointer"
+                                >
+                                    <option value="room">Room</option>
+                                    <option value="stairs">Stairs</option>
+                                    <option value="corridor">Corridor</option>
+                                    <option value="junction">Junction</option>
+                                </select>
+                            </div>
+                        </div>
                         <div className="flex gap-3">
-                            <button onClick={() => { setShowNodeCreationModal(false); setTempNodePosition(null); setNewNodeName(''); }} className="flex-1 py-2 bg-gray-100 rounded-lg font-bold text-gray-600">Cancel</button>
-                            <button onClick={confirmCreateNode} disabled={!newNodeName.trim()} className="flex-1 py-2 bg-[var(--color-primary)] text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed">Create</button>
+                            <button onClick={() => { setShowNodeCreationModal(false); setTempNodePosition(null); setNewNodeName(''); setNewNodeType('room'); }} className="flex-1 py-2.5 bg-gray-100 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors">Cancel</button>
+                            <button onClick={confirmCreateNode} disabled={!newNodeName.trim()} className="flex-1 py-2.5 bg-[var(--color-primary)] text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg transition-all">Create</button>
                         </div>
                     </div>
                 </div>

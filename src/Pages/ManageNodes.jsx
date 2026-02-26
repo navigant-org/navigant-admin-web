@@ -22,6 +22,7 @@ export default function ManageNodes() {
                     <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-semibold">
                         <tr>
                             <th className="px-6 py-4">Node Label</th>
+                            <th className="px-6 py-4">Type</th>
                             <th className="px-6 py-4">Location</th>
                             <th className="px-6 py-4">Connections</th>
                             <th className="px-6 py-4">Magnetic Fingerprint</th>
@@ -39,6 +40,17 @@ export default function ManageNodes() {
                             nodes.map((node) => (
                                 <tr key={node.id} className="hover:bg-gray-50/50">
                                     <td className="px-6 py-4 font-bold text-gray-900">{node.label}</td>
+                                    <td className="px-6 py-4">
+                                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                                            node.node_type === 'room' ? 'bg-blue-100 text-blue-700' :
+                                            node.node_type === 'stairs' ? 'bg-orange-100 text-orange-700' :
+                                            node.node_type === 'corridor' ? 'bg-green-100 text-green-700' :
+                                            node.node_type === 'junction' ? 'bg-purple-100 text-purple-700' :
+                                            'bg-gray-100 text-gray-700'
+                                        }`}>
+                                            {node.node_type || 'room'}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 text-gray-600">
                                         {getLocation(node.floorId)}
                                     </td>
@@ -86,8 +98,22 @@ export default function ManageNodes() {
                                     type="text" 
                                     value={editLabel}
                                     onChange={(e) => setEditLabel(e.target.value)}
-                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl"
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Type</label>
+                                <select 
+                                    value={editNodeType || 'room'}
+                                    onChange={(e) => setEditNodeType(e.target.value)}
+                                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all appearance-none cursor-pointer"
+                                >
+                                    <option value="room">Room</option>
+                                    <option value="stairs">Stairs</option>
+                                    <option value="corridor">Corridor</option>
+                                    <option value="junction">Junction</option>
+                                </select>
                             </div>
 
                             <div>
