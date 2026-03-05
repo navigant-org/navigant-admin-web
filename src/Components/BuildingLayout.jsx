@@ -65,6 +65,12 @@ export default function BuildingLayout() {
                 >
                     Edges
                 </NavLink>
+                <NavLink 
+                    to="stairs" 
+                    className={({ isActive }) => `px-6 py-3 font-medium text-sm transition-all border-b-2 ${isActive ? 'border-[var(--color-primary)] text-[var(--color-primary)]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    Stairs
+                </NavLink>
             </div>
 
             {/* Content Area */}

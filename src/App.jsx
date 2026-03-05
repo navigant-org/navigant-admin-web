@@ -10,6 +10,7 @@ import Layout from "./Components/Layout";
 import BuildingLayout from "./Components/BuildingLayout";
 import BuildingNodes from "./Pages/BuildingNodes";
 import BuildingEdges from "./Pages/BuildingEdges";
+import Stairs from "./Pages/Stairs";
 import storage, { KEYS } from "./utils/storage";
 
 function App() {
@@ -65,6 +66,7 @@ function App() {
             <Route path="floors" element={<Floors />} />
             <Route path="nodes" element={<BuildingNodes />} />
             <Route path="edges" element={<BuildingEdges />} />
+            <Route path="stairs" element={<Stairs />} />
           </Route>
 
           <Route path="/floors/:floorId/map" element={<MapEditor />} />
