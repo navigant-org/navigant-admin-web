@@ -120,3 +120,11 @@ export const edgeService = {
     return response.data;
   },
 };
+
+// Fingerprint Services
+export const fingerprintService = {
+  deleteAll: async () => {
+    const response = await apiClient.delete('/delete_all_fingerprints');
+    return response.data;
+  },
+};

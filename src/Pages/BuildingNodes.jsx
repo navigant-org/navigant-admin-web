@@ -12,7 +12,7 @@ export default function BuildingNodes() {
 
     // Selection & Details State
     const [selectedNode, setSelectedNode] = useState(null);
-    const [selectedNodeFingerprint, setSelectedNodeFingerprint] = useState(null);
+    const [selectedNodeFingerprints, setSelectedNodeFingerprints] = useState([]);
     const [activeTab, setActiveTab] = useState('fingerprint'); // 'fingerprint' or 'raw'
     const [loadingFingerprint, setLoadingFingerprint] = useState(false);
 
@@ -31,7 +31,7 @@ export default function BuildingNodes() {
         if (selectedNode) {
             fetchFingerprints(selectedNode.node_id);
         } else {
-            setSelectedNodeFingerprint(null);
+            setSelectedNodeFingerprints([]);
         }
     }, [selectedNode]);
 
@@ -59,12 +59,11 @@ export default function BuildingNodes() {
         try {
             setLoadingFingerprint(true);
             const data = await nodeService.getFingerprints(nodeId);
-            // Expected response: { fingerprint: { mean: {...}, std: {...}, raw: [...] } }
-            // Adjust based on actual API
-            setSelectedNodeFingerprint(data);
+            // API returns: { node_id: ..., fingerprints: [...] }
+            setSelectedNodeFingerprints(data.fingerprints || []);
         } catch (err) {
             console.error("Failed to fetch fingerprints:", err);
-            setSelectedNodeFingerprint(null);
+            setSelectedNodeFingerprints([]);
         } finally {
             setLoadingFingerprint(false);
         }
@@ -128,8 +127,8 @@ export default function BuildingNodes() {
         : nodes.filter(n => n.floor_id == filterFloorId); // loose equality for string/number match
 
     // Helper to safely access magnetic data
-    // Assuming API structure. If flattened, adjust.
-    const getMagData = () => selectedNodeFingerprint || {};
+    // Now returns the fingerprints array
+    const getFingerprints = () => selectedNodeFingerprints;
 
     return (
         <div className="flex relative h-[calc(100vh-12rem)]">
@@ -298,69 +297,51 @@ export default function BuildingNodes() {
                                 <>
                             {activeTab === 'fingerprint' && (
                                 <div className="space-y-4">
-                                    {!getMagData().mean ? (
+                                    {getFingerprints().length === 0 ? (
                                         <div className="text-center py-10 text-gray-400 text-sm">
-                                            No processed fingerprint data available.
+                                            No fingerprint data available.
                                         </div>
                                     ) : (
-                                        <table className="w-full text-xs text-left">
-                                            <thead className="bg-gray-50 text-gray-500 font-semibold">
-                                                <tr>
-                                                    <th className="px-2 py-2">Axis</th>
-                                                    <th className="px-2 py-2">Mean (μT)</th>
-                                                    <th className="px-2 py-2">Std Dev</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                <tr>
-                                                    <td className="px-2 py-2 font-bold text-gray-700">X</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.x?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.x?.toFixed(2) ?? '-'}</td>
-                                                </tr>
-                                                <tr>
-                                                    <td className="px-2 py-2 font-bold text-gray-700">Y</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.y?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.y?.toFixed(2) ?? '-'}</td>
-                                                </tr>
-                                                <tr>
-                                                    <td className="px-2 py-2 font-bold text-gray-700">Z</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().mean?.z?.toFixed(2) ?? '-'}</td>
-                                                    <td className="px-2 py-2 font-mono">{getMagData().std?.z?.toFixed(2) ?? '-'}</td>
-                                                </tr>
-                                            </tbody>
-                                        </table>
+                                        <div className="space-y-4">
+                                            <div className="text-sm text-gray-600">
+                                                Total fingerprints: {getFingerprints().length}
+                                            </div>
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="bg-gray-50 text-gray-500 font-semibold">
+                                                    <tr>
+                                                        <th className="px-2 py-2">ID</th>
+                                                        <th className="px-2 py-2">Mean X (μT)</th>
+                                                        <th className="px-2 py-2">Mean Y (μT)</th>
+                                                        <th className="px-2 py-2">Mean Z (μT)</th>
+                                                        <th className="px-2 py-2">Std X</th>
+                                                        <th className="px-2 py-2">Std Y</th>
+                                                        <th className="px-2 py-2">Std Z</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100">
+                                                    {getFingerprints().map((fp) => (
+                                                        <tr key={fp.fingerprint_id} className="hover:bg-gray-50">
+                                                            <td className="px-2 py-2 font-bold text-gray-700">{fp.fingerprint_id}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.mean_x?.toFixed(2) ?? '-'}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.mean_y?.toFixed(2) ?? '-'}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.mean_z?.toFixed(2) ?? '-'}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.std_x?.toFixed(2) ?? '-'}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.std_y?.toFixed(2) ?? '-'}</td>
+                                                            <td className="px-2 py-2 font-mono">{fp.std_z?.toFixed(2) ?? '-'}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     )}
                                 </div>
                             )}
 
                             {activeTab === 'raw' && (
                                 <div className="space-y-4">
-                                     {!getMagData().raw || getMagData().raw.length === 0 ? (
-                                        <div className="text-center py-10 text-gray-400 text-sm">
-                                            No raw readings available.
-                                        </div>
-                                    ) : (
-                                        <table className="w-full text-xs text-left">
-                                            <thead className="bg-gray-50 text-gray-500 font-semibold">
-                                                <tr>
-                                                    <th className="px-2 py-2">#</th>
-                                                    <th className="px-2 py-2">Mag X</th>
-                                                    <th className="px-2 py-2">Mag Y</th>
-                                                    <th className="px-2 py-2">Mag Z</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                {getMagData().raw.map((reading, idx) => (
-                                                    <tr key={idx} className="hover:bg-gray-50">
-                                                        <td className="px-2 py-1.5 text-gray-400">{idx + 1}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_x?.toFixed(2) ?? reading.x?.toFixed(2)}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_y?.toFixed(2) ?? reading.y?.toFixed(2)}</td>
-                                                        <td className="px-2 py-1.5 font-mono">{reading.mag_z?.toFixed(2) ?? reading.z?.toFixed(2)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
+                                    <div className="text-center py-10 text-gray-400 text-sm">
+                                        Raw magnetic readings are not available in the current API response.
+                                    </div>
                                 </div>
                             )}
                             </>

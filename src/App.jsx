@@ -6,6 +6,7 @@ import Buildings from "./Pages/Buildings";
 import Floors from "./Pages/Floors";
 import MapEditor from "./Pages/MapEditor";
 import ExportData from "./Pages/ExportData";
+import DeleteAllFingerprints from "./Pages/DeleteAllFingerprints";
 import Layout from "./Components/Layout";
 import BuildingLayout from "./Components/BuildingLayout";
 import BuildingNodes from "./Pages/BuildingNodes";
@@ -71,6 +72,7 @@ function App() {
 
           <Route path="/floors/:floorId/map" element={<MapEditor />} />
           <Route path="/export-data" element={<ExportData />} />
+          <Route path="/delete-all-fingerprints" element={<DeleteAllFingerprints />} />
         </Route>
       </Routes>
     </BrowserRouter>
